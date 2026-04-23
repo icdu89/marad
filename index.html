@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Exam Trainer</title>
+<style>
+    :root {
+        --bg: #1e1f24;
+        --card: #2a2c33;
+        --text: #eceef2;
+        --muted: #9aa0aa;
+        --accent: #4f8cff;
+        --good: #3ecf8e;
+        --bad: #ff5c5c;
+        --border: #3a3d45;
+    }
+    * { box-sizing: border-box; }
+    body {
+        margin: 0; padding: 24px;
+        font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg); color: var(--text);
+        display: flex; justify-content: center;
+    }
+    .app { width: 100%; max-width: 760px; }
+    h1 { margin: 0 0 12px; font-size: 22px; }
+    .stats {
+        display: flex; gap: 16px; flex-wrap: wrap;
+        background: var(--card); padding: 12px 16px; border-radius: 10px;
+        border: 1px solid var(--border); margin-bottom: 16px;
+        font-size: 14px; color: var(--muted);
+    }
+    .stats b { color: var(--text); }
+    .progress-bar {
+        height: 6px; background: #3a3d45; border-radius: 3px; overflow: hidden;
+        flex: 1 1 100%; margin-top: 4px;
+    }
+    .progress-bar > div { height: 100%; background: var(--good); width: 0; transition: width .3s; }
+    .card {
+        background: var(--card); border: 1px solid var(--border);
+        border-radius: 12px; padding: 20px; margin-bottom: 16px;
+    }
+    .qmeta { color: var(--muted); font-size: 13px; margin-bottom: 8px; }
+    .qtext { font-size: 18px; line-height: 1.5; margin-bottom: 16px; }
+    .options { display: flex; flex-direction: column; gap: 10px; }
+    .opt {
+        background: #34373f; border: 1px solid var(--border);
+        color: var(--text); text-align: left; padding: 12px 14px;
+        border-radius: 8px; cursor: pointer; font-size: 15px;
+        transition: background .15s, border-color .15s;
+    }
+    .opt:hover:not(:disabled) { border-color: var(--accent); }
+    .opt:disabled { cursor: default; opacity: 0.95; }
+    .opt.answered { cursor: default; opacity: 0.95; }
+    .opt.answered:hover { border-color: var(--border); }
+    .opt.correct { background: rgba(62,207,142,.18); border-color: var(--good); }
+    .opt.wrong   { background: rgba(255,92,92,.18);  border-color: var(--bad); }
+    .feedback { margin-top: 14px; font-size: 14px; min-height: 20px; }
+    .feedback.good { color: var(--good); }
+    .feedback.bad  { color: var(--bad); }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    button.action {
+        background: var(--accent); color: white; border: 0;
+        padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px;
+    }
+    button.action:hover { filter: brightness(1.1); }
+    .done {
+        text-align: center; padding: 40px 20px; font-size: 18px; color: var(--good);
+    }
+    .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+    <h1>📚 Exam Trainer</h1>
+
+    <div class="stats" id="stats"></div>
+
+    <div id="container"></div>
+
+    <p class="hint">
+        Progress is auto-saved in your browser after every answer.
+    </p>
+</div>
+
+<script src="config.js"></script>
+<script src="questions.js"></script>
+<script>
+(function () {
+    const cfg = (typeof CONFIG === "object" && CONFIG) ? CONFIG : {};
+    const STORAGE_KEY      = cfg.storageKey            || "exam-trainer-progress-v1";
+    const REQUIRED_CORRECT = cfg.requiredCorrect       || 10;
+    const RESET_ON_WRONG   = cfg.resetStreakOnWrong !== false;
+    const AVOID_REPEAT     = cfg.avoidImmediateRepeat !== false;
+
+    // progress: { [id]: { correct: number, wrong: number, mastered: boolean } }
+    let progress = {};
+    let current = null;        // current question object
+    let answered = false;      // user already answered current question?
+    let lastQuestionId = null; // previous question id (to avoid immediate repeat)
+    let fileHandle = null;     // FileSystemFileHandle for progress file (if chosen)
+    let saveTimer = null;      // debounce timer for file writes
+
+    const $stats = document.getElementById("stats");
+    const $container = document.getElementById("container");
+    const $hint = document.getElementById("hint");
+    const $btnFile = document.getElementById("btn-file");
+
+    const FS_SUPPORTED = "showOpenFilePicker" in window && "showSaveFilePicker" in window;
+    if ($btnFile) {
+        if (!FS_SUPPORTED) $btnFile.style.display = "none";
+        $btnFile.onclick = chooseProgressFile;
+    }
+
+    // Normalize questions: an option prefixed with "!" marks the correct answer.
+    // The "!" is stripped from the displayed text. Falls back to existing `answer` index.
+    QUESTIONS.forEach(q => {
+        const flagged = q.options.findIndex(o => typeof o === "string" && o.startsWith("!"));
+        if (flagged >= 0) q.answer = flagged;
+        if (typeof q.answer !== "number") q.answer = 0;
+        q.options = q.options.map(o => (typeof o === "string" && o.startsWith("!")) ? o.slice(1) : o);
+    });
+
+    init();
+
+    async function init() {
+        if (FS_SUPPORTED) {
+            const saved = await idbGet("progressFileHandle");
+            if (saved) {
+                const ok = await ensurePermission(saved, "readwrite");
+                if (ok) {
+                    fileHandle = saved;
+                    progress = (await readProgressFromFile(fileHandle)) || {};
+                    updateHint();
+                    nextQuestion();
+                    return;
+                } else {
+                    await idbDel("progressFileHandle");
+                }
+            }
+        }
+        progress = loadFromLocalStorage();
+        updateHint();
+        nextQuestion();
+    }
+
+    function updateHint() {
+        if (!$hint) return;
+        if (fileHandle) {
+            $hint.textContent = `Progress auto-saved to file: ${fileHandle.name}`;
+        } else if (FS_SUPPORTED) {
+            $hint.textContent = "Progress auto-saved in browser. Click 📁 Progress file to use a JSON file on disk instead.";
+        } else {
+            $hint.textContent = "Progress auto-saved in your browser after every answer.";
+        }
+    }
+
+    async function chooseProgressFile() {
+        try {
+            let handle;
+            const choice = confirm("OK = open existing progress file\nCancel = create a new progress file");
+            if (choice) {
+                [handle] = await window.showOpenFilePicker({
+                    types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+                    multiple: false
+                });
+            } else {
+                handle = await window.showSaveFilePicker({
+                    suggestedName: "exam-progress.json",
+                    types: [{ description: "JSON", accept: { "application/json": [".json"] } }]
+                });
+            }
+            const ok = await ensurePermission(handle, "readwrite");
+            if (!ok) { alert("Permission denied."); return; }
+            fileHandle = handle;
+            await idbSet("progressFileHandle", handle);
+            const fromFile = await readProgressFromFile(handle);
+            if (fromFile && Object.keys(fromFile).length) {
+                progress = fromFile;
+            } else {
+                await writeProgressToFile(handle, progress);
+            }
+            updateHint();
+            nextQuestion();
+        } catch (e) {
+            if (e && e.name !== "AbortError") {
+                console.warn(e);
+                alert("Could not open file: " + e.message);
+            }
+        }
+    }
+
+    // ---------- core ----------
+
+    function getStat(id) {
+        return progress[id] || { correct: 0, wrong: 0, mastered: false };
+    }
+
+    function pendingQuestions() {
+        return QUESTIONS.filter(q => !getStat(q.id).mastered);
+    }
+
+    function nextQuestion() {
+        renderStats();
+        const pending = pendingQuestions();
+        if (pending.length === 0) {
+            $container.innerHTML = `<div class="card done">🎉 All questions mastered!<br><br>
+                <button class="action" onclick="location.reload()">Start over</button></div>`;
+            return;
+        }
+        let pool = pending;
+        if (AVOID_REPEAT && pool.length > 1 && lastQuestionId != null) {
+            const filtered = pool.filter(q => q.id !== lastQuestionId);
+            if (filtered.length > 0) pool = filtered;
+        }
+        const weights = pool.map(q => {
+            const s = getStat(q.id);
+            return Math.max(1, REQUIRED_CORRECT - s.correct);
+        });
+        current = weightedPick(pool, weights);
+        lastQuestionId = current.id;
+        answered = false;
+        renderQuestion();
+    }
+
+    function weightedPick(items, weights) {
+        const total = weights.reduce((a, b) => a + b, 0);
+        let r = Math.random() * total;
+        for (let i = 0; i < items.length; i++) {
+            r -= weights[i];
+            if (r <= 0) return items[i];
+        }
+        return items[items.length - 1];
+    }
+
+    function renderQuestion() {
+        const s = getStat(current.id);
+        $container.innerHTML = `
+            <div class="card">
+                <div class="qmeta">Question #${current.id} · correct ${s.correct}/${REQUIRED_CORRECT} · wrong ${s.wrong}</div>
+                <div class="qtext"></div>
+                <div class="options"></div>
+                <div class="feedback" id="feedback"></div>
+                <div class="actions" id="actions"></div>
+            </div>
+        `;
+        $container.querySelector(".qtext").textContent = current.q;
+
+        const $opts = $container.querySelector(".options");
+        current.options.forEach((opt, idx) => {
+            const btn = document.createElement("button");
+            btn.className = "opt";
+            btn.textContent = opt;
+            btn.onclick = () => onAnswer(idx);
+            $opts.appendChild(btn);
+        });
+    }
+
+    function onAnswer(idx) {
+        // If already answered, treat any option click as "Next question" for faster navigation.
+        if (answered) { nextQuestion(); return; }
+        answered = true;
+
+        const correctIdx = current.answer;
+        const stat = getStat(current.id);
+        const $feedback = document.getElementById("feedback");
+        const $actions = document.getElementById("actions");
+        const optButtons = $container.querySelectorAll(".opt");
+
+        optButtons.forEach((b, i) => {
+            b.disabled = true;
+            if (i === correctIdx) b.classList.add("correct");
+            if (i === idx && idx !== correctIdx) b.classList.add("wrong");
+        });
+
+        if (idx === correctIdx) {
+            stat.correct += 1;
+            if (stat.correct >= REQUIRED_CORRECT) stat.mastered = true;
+            $feedback.className = "feedback good";
+            $feedback.textContent = stat.mastered
+                ? `✅ Correct! Mastered (${stat.correct}/${REQUIRED_CORRECT}) — removed from rotation.`
+                : `✅ Correct! (${stat.correct}/${REQUIRED_CORRECT})`;
+        } else {
+            stat.wrong += 1;
+            if (RESET_ON_WRONG) stat.correct = 0;
+            $feedback.className = "feedback bad";
+            $feedback.innerHTML = `❌ Wrong. Correct answer: <b>${escapeHtml(current.options[correctIdx])}</b>`
+                + (RESET_ON_WRONG ? ". Streak reset." : ".");
+        }
+        progress[current.id] = stat;
+        saveProgress();
+        renderStats();
+
+        const nextBtn = document.createElement("button");
+        nextBtn.className = "action";
+        nextBtn.textContent = "Next question →";
+        nextBtn.onclick = nextQuestion;
+        $actions.appendChild(nextBtn);
+        nextBtn.focus();
+    }
+
+    function renderStats() {
+        const total = QUESTIONS.length;
+        const mastered = QUESTIONS.filter(q => getStat(q.id).mastered).length;
+        const seen = QUESTIONS.filter(q => {
+            const s = getStat(q.id);
+            return s.correct > 0 || s.wrong > 0;
+        }).length;
+        const pct = total ? Math.round((mastered / total) * 100) : 0;
+        $stats.innerHTML = `
+            <div>Опановано: <b>${mastered}</b> / ${total}</div>
+            <div>Переглянуто: <b>${seen}</b></div>
+            <div>Залишилось: <b>${total - mastered}</b></div>
+            <div style="margin-left:auto;">Прогрес: <b>${pct}%</b></div>
+            <div class="progress-bar"><div style="width:${pct}%"></div></div>
+        `;
+    }
+
+    // ---------- persistence ----------
+
+    function loadFromLocalStorage() {
+        try {
+            const raw = localStorage.getItem(STORAGE_KEY);
+            return raw ? JSON.parse(raw) : {};
+        } catch (e) {
+            console.warn("Failed to load progress:", e);
+            return {};
+        }
+    }
+    function saveProgress() {
+        // Always mirror to localStorage as a backup.
+        try { localStorage.setItem(STORAGE_KEY, JSON.stringify(progress)); }
+        catch (e) { console.warn("localStorage save failed:", e); }
+        // If a file handle is set, also persist to the chosen file (debounced).
+        if (fileHandle) {
+            clearTimeout(saveTimer);
+            saveTimer = setTimeout(() => writeProgressToFile(fileHandle, progress), 150);
+        }
+    }
+
+    async function readProgressFromFile(handle) {
+        try {
+            const file = await handle.getFile();
+            const text = await file.text();
+            if (!text.trim()) return {};
+            const data = JSON.parse(text);
+            return (data && typeof data === "object" && !Array.isArray(data)) ? data : {};
+        } catch (e) {
+            console.warn("Failed to read progress file:", e);
+            return null;
+        }
+    }
+    async function writeProgressToFile(handle, data) {
+        try {
+            const writable = await handle.createWritable();
+            await writable.write(JSON.stringify(data, null, 2));
+            await writable.close();
+        } catch (e) {
+            console.warn("Failed to write progress file:", e);
+        }
+    }
+    async function ensurePermission(handle, mode) {
+        try {
+            const opts = { mode };
+            if ((await handle.queryPermission(opts)) === "granted") return true;
+            return (await handle.requestPermission(opts)) === "granted";
+        } catch (e) {
+            console.warn("Permission check failed:", e);
+            return false;
+        }
+    }
+
+    // ---------- tiny IndexedDB helpers (to remember file handle) ----------
+    function idbOpen() {
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open("exam-trainer", 1);
+            req.onupgradeneeded = () => req.result.createObjectStore("kv");
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+    }
+    async function idbGet(key) {
+        try {
+            const db = await idbOpen();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction("kv", "readonly");
+                const req = tx.objectStore("kv").get(key);
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        } catch { return null; }
+    }
+    async function idbSet(key, value) {
+        try {
+            const db = await idbOpen();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction("kv", "readwrite");
+                tx.objectStore("kv").put(value, key);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        } catch (e) { console.warn(e); }
+    }
+    async function idbDel(key) {
+        try {
+            const db = await idbOpen();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction("kv", "readwrite");
+                tx.objectStore("kv").delete(key);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        } catch (e) { console.warn(e); }
+    }
+
+    function escapeHtml(s) {
+        return String(s).replace(/[&<>"']/g, c => ({
+            "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"
+        }[c]));
+    }
+})();
+</script>
+</body>
+</html>
+
