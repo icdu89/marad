@@ -417,10 +417,13 @@
                 : `✅ Правильно! (${stat.correct}/${REQUIRED_CORRECT})`;
         } else {
             stat.wrong += 1;
-            if (RESET_ON_WRONG) stat.correct = 0;
+            if (RESET_ON_WRONG) {
+                stat.correct = 0;
+                stat.mastered = false;
+            }
             $feedback.className = "feedback bad";
             $feedback.innerHTML = `❌ Неправильно. Правильна відповідь: <b>${escapeHtml(current.options[correctIdx])}</b>`
-                + (RESET_ON_WRONG ? ". Серію скинуто." : ".");
+                + (RESET_ON_WRONG ? ". Лічильник правильних скинуто до 0." : ".");
         }
         progress[current.id] = stat;
         saveProgress();
