@@ -99,8 +99,9 @@
         button.action { padding: 12px 14px; font-size: 15px; }
         button.action.next-btn { padding: 16px; font-size: 17px; }
         #topbar { gap: 6px; }
-        #topbar .action { flex: 1 1 auto; }
         #section-label { width: 100%; }
+        #bottombar { gap: 6px; }
+        #bottombar .action { flex: 1 1 auto; margin-left: 0 !important; }
     }
 </style>
 </head>
@@ -110,13 +111,16 @@
 
     <div id="topbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
         <div id="section-label" style="color:var(--muted);font-size:14px;"></div>
-        <button id="btn-change-section" class="action" style="display:none;margin-left:auto;">⟵ Обрати інший розділ</button>
-        <button id="btn-reset-section" class="action" style="display:none;background:#5a5d66;">↺ Скинути прогрес розділу</button>
     </div>
 
     <div class="stats" id="stats" style="display:none;"></div>
 
     <div id="container"></div>
+
+    <div id="bottombar" style="display:flex;gap:8px;align-items:center;margin-top:16px;flex-wrap:wrap;">
+        <button id="btn-change-section" class="action" style="display:none;">⟵ Обрати інший розділ</button>
+        <button id="btn-reset-section" class="action" style="display:none;background:#5a5d66;margin-left:auto;">↺ Скинути прогрес розділу</button>
+    </div>
 
     <p class="hint" id="hint">
         Прогрес автоматично зберігається у браузері після кожної відповіді.
