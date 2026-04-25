@@ -1,8 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="uk">
 <head>
 <meta charset="UTF-8" />
-<title>Exam Trainer</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#1e1f24" />
+<title>Тренажер іспиту</title>
 <style>
     :root {
         --bg: #1e1f24;
@@ -15,8 +17,14 @@
         --border: #3a3d45;
     }
     * { box-sizing: border-box; }
+    html, body { -webkit-text-size-adjust: 100%; }
     body {
-        margin: 0; padding: 24px;
+        margin: 0;
+        padding: 16px;
+        padding-top: max(16px, env(safe-area-inset-top));
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
+        padding-left: max(16px, env(safe-area-inset-left));
+        padding-right: max(16px, env(safe-area-inset-right));
         font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
         background: var(--bg); color: var(--text);
         display: flex; justify-content: center;
@@ -47,6 +55,9 @@
         color: var(--text); text-align: left; padding: 12px 14px;
         border-radius: 8px; cursor: pointer; font-size: 15px;
         transition: background .15s, border-color .15s;
+        width: 100%;
+        font-family: inherit;
+        -webkit-tap-highlight-color: transparent;
     }
     .opt:hover:not(:disabled) { border-color: var(--accent); }
     .opt:disabled { cursor: default; opacity: 0.95; }
@@ -57,21 +68,45 @@
     .feedback { margin-top: 14px; font-size: 14px; min-height: 20px; }
     .feedback.good { color: var(--good); }
     .feedback.bad  { color: var(--bad); }
-    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
+    .actions { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
     button.action {
         background: var(--accent); color: white; border: 0;
-        padding: 10px 16px; border-radius: 8px; cursor: pointer; font-size: 14px;
+        padding: 12px 16px; border-radius: 8px; cursor: pointer; font-size: 15px;
+        font-family: inherit;
+        -webkit-tap-highlight-color: transparent;
     }
     button.action:hover { filter: brightness(1.1); }
+    button.action.next-btn {
+        width: 100%;
+        padding: 14px 16px;
+        font-size: 16px;
+        font-weight: 600;
+    }
     .done {
         text-align: center; padding: 40px 20px; font-size: 18px; color: var(--good);
     }
     .hint { color: var(--muted); font-size: 12px; margin-top: 6px; }
+
+    @media (max-width: 600px) {
+        body { padding: 12px;
+            padding-top: max(12px, env(safe-area-inset-top));
+            padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+        h1 { font-size: 20px; }
+        .card { padding: 16px; border-radius: 10px; }
+        .qtext { font-size: 17px; }
+        .opt { padding: 14px; font-size: 16px; }
+        .stats { gap: 10px; padding: 10px 12px; font-size: 13px; }
+        button.action { padding: 12px 14px; font-size: 15px; }
+        button.action.next-btn { padding: 16px; font-size: 17px; }
+        #topbar { gap: 6px; }
+        #topbar .action { flex: 1 1 auto; }
+        #section-label { width: 100%; }
+    }
 </style>
 </head>
 <body>
 <div class="app">
-    <h1>📚 Exam Trainer</h1>
+    <h1>📚 Тренажер іспиту</h1>
 
     <div id="topbar" style="display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap;">
         <div id="section-label" style="color:var(--muted);font-size:14px;"></div>
@@ -84,7 +119,7 @@
     <div id="container"></div>
 
     <p class="hint" id="hint">
-        Progress is auto-saved in your browser after every answer.
+        Прогрес автоматично зберігається у браузері після кожної відповіді.
     </p>
 </div>
 
@@ -168,7 +203,7 @@
         $hint.textContent = "Прогрес зберігається окремо для кожного розділу.";
 
         if (!SECTIONS.length) {
-            $container.innerHTML = `<div class="card">No sections configured in config.js</div>`;
+            $container.innerHTML = `<div class="card">У config.js не налаштовано жодного розділу</div>`;
             return;
         }
 
@@ -184,7 +219,7 @@
             const btn = document.createElement("button");
             btn.className = "section-btn";
             btn.innerHTML = `<div><b>${escapeHtml(sec.title)}</b></div>
-                <div class="meta">required: ${req}× · mastered: ${masteredCount}</div>`;
+                <div class="meta">потрібно: ${req}× · опановано: ${masteredCount}</div>`;
             btn.onclick = () => startSection(sec);
             grid.appendChild(btn);
         });
@@ -204,7 +239,7 @@
         $btnReset.style.display = "inline-block";
         $stats.style.display = "flex";
         $hint.textContent = `Прогрес розділу зберігається у браузері (ключ: ${STORAGE_KEY}).`;
-        $container.innerHTML = `<div class="card">Loading questions…</div>`;
+        $container.innerHTML = `<div class="card">Завантаження запитань…</div>`;
 
         loadSectionScript(sec)
             .then(qs => {
@@ -216,7 +251,7 @@
             })
             .catch(err => {
                 console.error(err);
-                $container.innerHTML = `<div class="card">Failed to load <code>${escapeHtml(sec.folder)}/questions.js</code>: ${escapeHtml(err.message || String(err))}</div>`;
+                $container.innerHTML = `<div class="card">Не вдалося завантажити <code>${escapeHtml(sec.folder)}/questions.js</code>: ${escapeHtml(err.message || String(err))}</div>`;
             });
     }
 
@@ -245,8 +280,8 @@
                 // chosen on this page load.
                 if (window.__sectionLoadedOnce__) {
                     throw new Error(
-                        "Cannot load another section without a local web server " +
-                        "(file:// blocks fetch). Reload the page to choose a different one."
+                        "Неможливо завантажити інший розділ без локального веб-сервера " +
+                        "(file:// блокує fetch). Перезавантажте сторінку, щоб обрати інший розділ."
                     );
                 }
                 return new Promise((resolve, reject) => {
@@ -270,7 +305,7 @@
                             reject(new Error("QUESTIONS not defined after loading " + url));
                         }
                     };
-                    s.onerror = () => reject(new Error("Failed to inject " + url));
+                    s.onerror = () => reject(new Error("Не вдалося підключити " + url));
                     document.head.appendChild(s);
                 });
             });
@@ -338,7 +373,7 @@
         const s = getStat(current.id);
         $container.innerHTML = `
             <div class="card">
-                <div class="qmeta">Question #${current.id} · correct ${s.correct}/${REQUIRED_CORRECT} · wrong ${s.wrong}</div>
+                <div class="qmeta">Питання №${current.id} · правильно ${s.correct}/${REQUIRED_CORRECT} · помилок ${s.wrong}</div>
                 <div class="qtext"></div>
                 <div class="options"></div>
                 <div class="feedback" id="feedback"></div>
@@ -378,22 +413,22 @@
             if (stat.correct >= REQUIRED_CORRECT) stat.mastered = true;
             $feedback.className = "feedback good";
             $feedback.textContent = stat.mastered
-                ? `✅ Correct! Mastered (${stat.correct}/${REQUIRED_CORRECT}) — removed from rotation.`
-                : `✅ Correct! (${stat.correct}/${REQUIRED_CORRECT})`;
+                ? `✅ Правильно! Опановано (${stat.correct}/${REQUIRED_CORRECT}) — вилучено з ротації.`
+                : `✅ Правильно! (${stat.correct}/${REQUIRED_CORRECT})`;
         } else {
             stat.wrong += 1;
             if (RESET_ON_WRONG) stat.correct = 0;
             $feedback.className = "feedback bad";
-            $feedback.innerHTML = `❌ Wrong. Correct answer: <b>${escapeHtml(current.options[correctIdx])}</b>`
-                + (RESET_ON_WRONG ? ". Streak reset." : ".");
+            $feedback.innerHTML = `❌ Неправильно. Правильна відповідь: <b>${escapeHtml(current.options[correctIdx])}</b>`
+                + (RESET_ON_WRONG ? ". Серію скинуто." : ".");
         }
         progress[current.id] = stat;
         saveProgress();
         renderStats();
 
         const nextBtn = document.createElement("button");
-        nextBtn.className = "action";
-        nextBtn.textContent = "Next question →";
+        nextBtn.className = "action next-btn";
+        nextBtn.textContent = "Наступне питання →";
         nextBtn.onclick = nextQuestion;
         $actions.appendChild(nextBtn);
         nextBtn.focus();
