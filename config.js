@@ -27,7 +27,8 @@ const CONFIG = {
         { id: 9,  folder: "9_pravyla_plavannia",               title: "9. Правила плавання",                   requiredCorrect: 2 },
         { id: 10, folder: "10_budova_sudna",                   title: "10. Будова судна",                      requiredCorrect: 2 },
         { id: 11, folder: "11_vodnyi_mototsykl",               title: "11. Водний мотоцикл",                   requiredCorrect: 2 },
-        { id: 12, folder: "12_prohuliankove_vitrilne_sudno",   title: "12. Прогулянкове вітрильне судно",      requiredCorrect: 2 }
+        { id: 12, folder: "12_prohuliankove_vitrilne_sudno",   title: "12. Прогулянкове вітрильне судно",      requiredCorrect: 2 },
+        { id: 13, folder: "13_inshe",                          title: "13. Інше",                              requiredCorrect: 2 }
     ]
 };
 
